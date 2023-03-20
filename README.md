@@ -76,3 +76,5 @@ Short description of the columns in the data set:
 -download_timeout_sum: Number of downloads that timed out
 -download_progress_sum: Number of progress outputs
 -notes: Notes generated while importing data (indicator for problems?)
+
+Acknowledgement: This repository is part of MDI-Lab of Salzburg Research, which is partially funded by the Austrian Federal Ministry of Climate Action, Environment, Energy, Mobility, Innovation and Technology (BMK) and the Austrian state Salzburg.
