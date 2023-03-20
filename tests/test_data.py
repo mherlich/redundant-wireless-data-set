@@ -17,7 +17,7 @@ def test_columns(df):
     """Columns in data match columns in documentation"""
     descriptions = []
     for line in open('README.md', 'r', encoding="utf8"):
-        description = re.match('-([\\w-]+):.+', line)
+        description = re.match('- ([\\w-]+):.+', line)
         if description:
             descriptions.append(description.group(1))
     assert set(descriptions) == set(df.columns)
