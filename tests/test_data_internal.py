@@ -15,7 +15,7 @@ def test_full_columns(full):
     """Columns in data match columns in documentation"""
     descriptions = []
     for line in open('README.md', 'r', encoding="utf8"):
-        match = re.match('-([\\w-]+):.+', line)
+        match = re.match('- ([\\w-]+):.+', line)
         if match:
             descriptions.append(match.group(1))
     assert set(descriptions)-set(['trip']) == set(full.columns) # trip is only in df
