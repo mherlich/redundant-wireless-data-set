@@ -210,8 +210,8 @@ def test_volume(df):
     # Ignore known three months without measurements (in considered area)
     vol_month = vol_month[~vol_month.index.isin(["2023-04-30 00:00:00+00:00", "2023-05-31 00:00:00+00:00", "2023-10-31 00:00:00+00:00"])]
     assert vol_month[:-1].min() > 11000
-    assert 28000 < vol_month.median() < 30000
-    assert 30000 < vol_month.mean() < 32000
+    assert 27000 < vol_month.median() < 29000
+    assert 29000 < vol_month.mean() < 31000
     assert vol_month.max() < 48000
 
 def test_gps(df):
@@ -676,8 +676,8 @@ def test_daily_file_pairs(dfa, dfb):
     assert filediffs.notna().all()
 
     # Check if not more than these known errors occured (test excplicitly requested)
-    assert (filediffs == 1).sum() == 46
-    assert (filediffs == 2).sum() == 16
+    assert (filediffs == 1).sum() == 40
+    assert (filediffs == 2).sum() == 11
 
 def test_pairs(df, dfa, dfb):
     """Checks for pairing of data"""

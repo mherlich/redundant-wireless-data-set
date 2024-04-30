@@ -13,13 +13,13 @@ import prepare.dedicated
 @pytest.fixture(name="data_folder") # Setting name this way, prevents redefinition on use of fixture
 def fixture_data_folder():
     """Folder that contains data set and raw data (in subfolder)"""
-    return "/home/mdi/data/"
+    return "data/"
 
 @pytest.fixture(name="newest_dataset_name")
 def fixture_newest_dataset_name(data_folder):
     """Provide name of newest data set"""
     datasets = [data_folder + f for f in os.listdir(data_folder)
-        if re.match("all_ready_[0-9\\-]*.fth", f)]
+        if re.match("SRFG-Redun-[0-9]*.fth", f)]
     datasets.sort(key=os.path.getmtime)
     return datasets[-1]
 
