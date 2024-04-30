@@ -72,9 +72,10 @@ Short description of the columns in the data set:
 - download_connect_sum: Number of downloads connecting (not consistenly used)
 - download_starting_sum: Number of downloads starting
 - download_done_sum: Number of finished downloads
-- download_cannot_sum: Number of failed downloads 
+- download_cannot_sum: Number of failed downloads
 - download_timeout_sum: Number of downloads that timed out
 - download_progress_sum: Number of progress outputs
+- dedicated: Trip was a dedicated measurement trip
 - notes: Notes generated while importing data (indicator for problems?)
 
 Acknowledgement: This repository is part of MDI-Lab of Salzburg Research, which is partially funded by the Austrian Federal Ministry of Climate Action, Environment, Energy, Mobility, Innovation and Technology (BMK) and the Austrian state Salzburg.

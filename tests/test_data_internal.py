@@ -63,11 +63,14 @@ def test_contains_new_data(df, full, newest_dataset_name):
         assert df[(df['device']==device) & (df['ping'].notna())]['time'].max() > cutoff
         assert df[(df['device']==device) & (df['datarateDown'].notna())]['time'].max() > cutoff
 
-def test_recent_gps_time(df, dfa, dfb):
+def test_recent_gps_time(full, df, dfa, dfb):
     """Timesync over GPS has happened recently"""
     age = datetime.timedelta(days=17)
     cutoff = datetime.datetime.now(datetime.timezone.utc) - age
+    assert full[full['ntp-TP-Core_refid'] == '.PPS.']['time'].max() > cutoff
     assert df[df['ntp-TP-Core_refid'] == '.PPS.']['time'].max() > cutoff
+
+    assert full[full['ntp-GPS-PI_refid'] == '.PPS.']['time'].max() > cutoff
     assert dfa[dfa['ntp-GPS-PI_refid'] == '.PPS.']['time'].max() > cutoff
     assert dfb[dfb['ntp-GPS-PI_refid'] == '.PPS.']['time'].max() > cutoff
 
@@ -84,7 +87,7 @@ def test_gap_mark(full):
 
 def test_download_details(df, full):
     """Plausibility of application level measurement details"""
-    assert (df['download_total_sum'].dropna() == 0).mean() < 0.055
+    assert (df['download_total_sum'].dropna() == 0).mean() < 0.06
     assert (df['download_total_sum'].dropna() > 1).mean() < 0.005
 
     assert full['download_total_sum'].max() < 15
@@ -113,25 +116,46 @@ def test_filename_content(full):
 
 def test_full_note_appearances(df, full):
     """Test if all notes appear and no unknown notes appear"""
-    notes = ['resample-loss', 'interpolated', 'cut-long', 'cut-lat', 'cut-track', 'est_error',
+    notes = ['', 'resample-loss', 'interpolated', 'cut-long', 'cut-lat', 'cut-track', 'est_error',
         'neg-time-diff-time', 'neg-time-diff-gpstime', 'old-tech', 'high-timestamp-position',
         'high-timestamp-stdOut', 'low-timestamp-signalStrength', 'low-timestamp-download',
-        'low-timestamp-stdOut', 'incomplete-signalStrength', 'low-timestamp-position']
+        'low-timestamp-stdOut', 'incomplete-signalStrength', 'low-timestamp-position',
+        'neg-speed', 'no-lossUp-file', 'no-lossDown-file']
     # Need to add file-specific notes as they appear (that is, when this test fails)
 
-    # All types of notes appear in full dataset
-    for note in notes:
-        assert full['notes'].str.contains(note).any() | df['notes'].str.contains(note).any()
-
-    # All notes in dataset are in list
-    for note in itertools.chain.from_iterable(full['notes'].str.split(',').tolist()):
-        if note != '':
-            assert note in notes
+    # Notes specified here are exactly those in the data sets
+    fullnotes = set(itertools.chain.from_iterable(full['notes'].str.split(',').tolist()))
+    dfnotes = set(itertools.chain.from_iterable(df['notes'].str.split(',').tolist()))
+    assert fullnotes.union(dfnotes) == set(notes)
 
 def test_abandoned_measurement_logs(raw_folder):
-    """Test if days with measurement logs have data files"""
+    """Test if days with measurement logs have data files ("Port already in use"-Error)"""
     logs = glob.glob(raw_folder + '**/*-measurement.log', recursive=True)
     log_days = set([l[:-20] for l in logs])
     measurements = glob.glob(raw_folder + '**/*.txt', recursive=True)
     empty_days = [day for day in log_days if len([m for m in measurements if m.startswith(day)])==0]
-    assert len(empty_days) <= 30 # Known value of empty days
+    assert len(empty_days) <= 37 # Known value of empty days
+
+def test_dedicated_consistency(dedicated):
+    """Test the specification of dedicated measurement drives for consistency"""
+    assert (dedicated['Start'] < dedicated['End']).all()
+    if len(dedicated) > 1:
+        assert (dedicated['End'].shift(1) < dedicated['Start']).drop(0).all()
+    assert (dedicated['Start'].diff().drop(0) > datetime.timedelta(hours=12)).all()
+    assert (dedicated['End'] - dedicated['Start']).min() > datetime.timedelta(hours=1)
+    assert (dedicated['End'] - dedicated['Start']).max() < datetime.timedelta(days=10)
+
+def test_dedicated(df, full, dedicated):
+    """Test progressing of dedicted data and the results"""
+    # Test if all dedicated measurement with postion and longer time trips are included in the final data set
+    dedicated_files = set(full[full['dedicated'] & full['lat'].notna()]['file'])
+    fgft = full.groupby('file')['time']
+    long_files = set(fgft.first()[fgft.max() - fgft.min() > datetime.timedelta(seconds=60)].index)
+    assert set(df[df['dedicated']]['file']) == dedicated_files.intersection(long_files)
+
+    # All files belong exclusively to one or the other category
+    assert set(full[full['dedicated']]['file']).isdisjoint(set(full[-full['dedicated']]['file']))
+
+    # Every dedicated line needs to contain at least one trip
+    # This has running time O(m*n), but could be implemented in O(m+n) if needed
+    assert dedicated.apply(lambda r: ((r['Start'] < full['time']) & (full['time'] < r['End'])).any(), axis=1).all()

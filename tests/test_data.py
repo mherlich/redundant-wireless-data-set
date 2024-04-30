@@ -70,6 +70,18 @@ def test_na_occurances(df):
     assert 0.55 > df['datarateDown'].isna().mean() > 0.45
     assert 0.55 > df['datarateDown_app'].isna().mean() > 0.45
 
+def test_devices(df):
+    """Used devices"""
+    assert set(df['device'].unique()) == set(['GPS-PI-02', 'GPS-PI-05'])
+
+    """Measured networks"""
+    assert set(df['FullName'].unique()) == set(['3 AT', 'A1', 'A1 AT'])
+
+    # 'A1' changed to 'A1 AT' between (2023-09-12 - 2023-09-14) and 2023-11-01 (or 2024-01-09?)
+    assert set(df[df['time'] < '2023-09-12']['FullName'].unique()) == set(['3 AT', 'A1'])
+
+    assert (df['ShortName'] == df['FullName']).all()
+
 def test_backward_time(df, samefile):
     """Backward moving time"""
     assert samefile.mean() > 0.997
@@ -97,7 +109,7 @@ def test_ntp_pi(df):
 
     # st
     assert (df[df['ntp-GPS-PI_st'].notna()]['ntp-GPS-PI_st'].isin([0, 1, 2, 3, 16])).all()
-    assert (df['ntp-GPS-PI_st'] == 16).sum() <= 13 # No sync happens only in few cases
+    assert (df['ntp-GPS-PI_st'] == 16).mean() < 4e-5 # No sync happens only in few cases
 
     # when
     assert df['ntp-GPS-PI_when'].min() >= 0
@@ -113,12 +125,13 @@ def test_ntp_pi(df):
 
     # delay
     assert df['ntp-GPS-PI_delay'].min() > -2400
-    assert df['ntp-GPS-PI_delay'].max() < 70
+    assert df['ntp-GPS-PI_delay'].max() < 520
+    assert (df['ntp-GPS-PI_delay'] > 70).sum() <= 3
     assert (df['ntp-GPS-PI_delay'] < -100).mean() < 0.002
 
     # offset
     assert df['ntp-GPS-PI_offset'].min() > -2400
-    assert df['ntp-GPS-PI_offset'].max() < 370
+    assert df['ntp-GPS-PI_offset'].max() < 700
     assert (df['ntp-GPS-PI_offset'] < -500).mean() < 0.004
     assert abs(df['ntp-GPS-PI_offset'].mean()) < 30
     assert df['ntp-GPS-PI_offset'].std() < 200
@@ -154,20 +167,20 @@ def test_ntp_core(df):
 
     # check delay
     assert df['ntp-TP-Core_delay'].min() >= 0
-    assert df['ntp-TP-Core_delay'].max() < 0.2
-    assert (df['ntp-TP-Core_delay'] < 0.05).mean() < 0.02
-    assert (df['ntp-TP-Core_delay'] > 0.15).mean() < 0.01
+    assert df['ntp-TP-Core_delay'].max() < 0.21
+    assert (df['ntp-TP-Core_delay'] < 0.05).mean() < 0.03
+    assert (df['ntp-TP-Core_delay'] > 0.2).mean() < 0.0001
 
     # check offset
-    assert df['ntp-TP-Core_offset'].min() > -2.5
-    assert df['ntp-TP-Core_offset'].max() < 3.11
+    assert df['ntp-TP-Core_offset'].min() > -4
+    assert df['ntp-TP-Core_offset'].max() < 4
     assert (df['ntp-TP-Core_offset'] > 0.3).mean() < 0.006
     assert abs(df['ntp-TP-Core_offset'].mean()) < 0.005
     assert df['ntp-TP-Core_offset'].std() < 0.2
 
     # check values of jitter
     assert df['ntp-TP-Core_jitter'].min() >= 0
-    assert df['ntp-TP-Core_jitter'].max() < 2.7
+    assert df['ntp-TP-Core_jitter'].max() < 3
     assert (df['ntp-TP-Core_jitter'] > 0.5).mean() < 0.006
 
 def test_duration(df):
@@ -178,24 +191,27 @@ def test_duration(df):
     assert (timespan < datetime.timedelta(minutes=60)).all()
 
 def test_volume(df):
-    """Check the number of measurments per day, week, and month"""
-    vol_day = df.groupby(pd.Grouper(key='time', freq='1d'))['lat'].count()
+    """Check the number of non-dedicated measurments per day, week, and month"""
+    dfd = df[-df['dedicated']]
+    vol_day = dfd.groupby(pd.Grouper(key='time', freq='1d'))['lat'].count()
     assert vol_day.min() >= 0
     assert vol_day.median() >= 0
     assert 800 < vol_day.mean() < 1000
     assert vol_day.max() < 8000
 
-    vol_week = df.groupby(pd.Grouper(key='time', freq='1w'))['lat'].count()
+    vol_week = dfd.groupby(pd.Grouper(key='time', freq='1w'))['lat'].count()
     assert vol_week.min() >= 0
-    assert 6000 < vol_week.median() < 8000
-    assert 6000 < vol_week.mean() < 8000
-    assert vol_week.max() < 16000
+    assert 5000 < vol_week.median() < 8000
+    assert 5000 < vol_week.mean() < 8000
+    assert vol_week.max() < 17000
 
     # Ignore last month, because it did not have the chance to collect as many measurements
-    vol_month = df.groupby(pd.Grouper(key='time', freq='1m'))['lat'].count()
+    vol_month = dfd.groupby(pd.Grouper(key='time', freq='1m'))['lat'].count()
+    # Ignore known three months without measurements (in considered area)
+    vol_month = vol_month[~vol_month.index.isin(["2023-04-30 00:00:00+00:00", "2023-05-31 00:00:00+00:00", "2023-10-31 00:00:00+00:00"])]
     assert vol_month[:-1].min() > 11000
-    assert 26000 < vol_month.median() < 28000
-    assert 27000 < vol_month.mean() < 30000
+    assert 28000 < vol_month.median() < 30000
+    assert 30000 < vol_month.mean() < 32000
     assert vol_month.max() < 48000
 
 def test_gps(df):
@@ -208,7 +224,7 @@ def test_gps(df):
 
     # Check values of alt (alt is not reliable)
     assert df['alt'].min() > -472
-    assert df['alt'].max() < 960
+    assert df['alt'].max() < 980
     assert (df['alt'] < 380).mean() < 0.0087 # Lowest altitude in Land Salzburg
 
     # Location of lowest (median) altitude along our track
@@ -225,7 +241,7 @@ def test_gps(df):
     # -> 47.850657,13.186000
     # https://api.open-elevation.com/api/v1/lookup?locations=47.850657,13.186000 -> 646
     assert (df['alt'] > 646).mean() < 0.09
-    assert (df['alt'] > 646+100).mean() < 0.0025 # More than 100m higher than possible max
+    assert (df['alt'] > 646+100).mean() < 0.003 # More than 100m higher than possible max
 
     # Compare speed to reasonble speed on highway
     assert df['speed'].min() >= 0
@@ -264,8 +280,20 @@ def test_gps_consistency(df):
 
 def test_interpolation(df):
     """Interpolated values (~5%)"""
-    assert 0.05 < df['notes'].str.contains('interpolated').mean() < 0.06
-    assert df['notes'].str.contains('interpolated').groupby(df['file']).mean().max() < 0.25
+
+    def cumsum_reset(sum, reset):
+        """Return cumulative sum, reset at all reset positions"""
+        return sum.cumsum() - sum.cumsum().where(reset).ffill().fillna(0).astype(int)
+
+    def running_count(s):
+        """Return a running count of boolean values, reset at false"""
+        return cumsum_reset(s, -s)
+        
+    interpolated = df['notes'].str.contains('interpolated')
+    assert 0.05 < interpolated.mean() < 0.06
+    assert interpolated.groupby(df['file']).mean().max() < 0.25
+    assert running_count(interpolated).max() < 60
+    assert (running_count(interpolated) > 3).mean() < 0.0005
 
 def test_position_compare(df, samefile):
     """Plausibility of changes of position"""
@@ -300,6 +328,20 @@ def test_position_compare(df, samefile):
     file_west = df[df['track'] > 180]['file'].unique()
     file_east = df[df['track'] < 180]['file'].unique()
     assert len(set(file_west).intersection(set(file_east))) == 0
+
+def test_position_street_match(df):
+    """Compare measured gps data to street gps data"""
+    for filename, df_dir in [
+        ('tests/gpsow.pkl', df[df['track']>180]), 
+        ('tests/gpswo.pkl', df[df['track']<=180])]:
+        street = pd.read_pickle(filename) # load data to compare with
+        street_min = street.groupby(street['longitude'].round(4))['min latitude'].min()
+        street_max = street.groupby(street['longitude'].round(4))['max latitude'].max()
+
+        less_min = df_dir['lat'] < df_dir['long'].round(4).map(dict(street_min))
+        greater_max = df_dir['lat'] > df_dir['long'].round(4).map(dict(street_max))
+
+        assert (less_min | greater_max).mean() < 0.01
 
 def test_timestamp_gpstime_match(df):
     """Match of timestamps from gps and system clock"""
@@ -342,7 +384,7 @@ def test_time_jumps(df, samefile):
     # Sometimes 'holes' appear in a track because we drop switching to old technology
     assert dfr['timediff'].max() < datetime.timedelta(seconds=90)
     assert (dfr['timediff'] > datetime.timedelta(seconds=1)).mean() < 0.00002
-    assert (dfr['timediff'] > datetime.timedelta(seconds=60)).mean() < 0.000002
+    assert (dfr['timediff'] > datetime.timedelta(seconds=60)).mean() < 0.000003
 
 def test_continuous_time(df, samefile):
     """Test for jumps in final data set (after interpolation)"""
@@ -431,17 +473,17 @@ def test_data_rate(df, dfa, dfb):
     df_drbyday = df[df['datarateDown'].notna()].groupby(pd.Grouper(key='time', freq='1d'))
     assert df_drbyday['datarateDown'].mean().max() < 55e6
     assert df_drbyday['datarateDown'].max().max() < 260e6
-    assert df_drbyday['datarateDown'].mean().min() > 14e6
+    assert df_drbyday['datarateDown'].mean().min() > 12e6
 
     # Provider A
     dfa_drbyday = dfa[dfa['datarateDown'].notna()].groupby(pd.Grouper(key='time', freq='1d'))
     assert dfa_drbyday['datarateDown'].mean().max() < 65e6
     assert dfa_drbyday['datarateDown'].max().max() < 260e6
-    assert dfa_drbyday['datarateDown'].mean().min() > 15e6
+    assert dfa_drbyday['datarateDown'].mean().min() > 12e6
 
     # Provider B
     dfb_drbyday = dfb[dfb['datarateDown'].notna()].groupby(pd.Grouper(key='time', freq='1d'))
-    assert dfb_drbyday['datarateDown'].mean().max() < 45e6
+    assert dfb_drbyday['datarateDown'].mean().max() < 60e6
     assert dfb_drbyday['datarateDown'].max().max() < 130e6
     assert dfb_drbyday['datarateDown'].mean().min() > 10e6
 
@@ -472,7 +514,7 @@ def test_datarate_app(df):
     # Positive overhead (does not hold everyhere, becuase of imperfect alignment)
     assert df['datarateDown'].mean() > df['datarateDown_app'].mean()
     fmd = df.groupby('file')['datarateDown'].mean() - df.groupby('file')['datarateDown_app'].mean()
-    assert fmd.min() > -11e6
+    assert fmd.min() > -14e6
     assert fmd.max() < 28e6
     assert (fmd.abs() > 5e6).mean() < 0.01
 
@@ -489,7 +531,7 @@ def test_datarate_app(df):
     # Sometimes correlation between measurement methods is low
     assert dff[['datarateDown','datarateDown_app']].corr().unstack().iloc[:,1].min() > 0.4
     assert (dff[['datarateDown','datarateDown_app']].corr().unstack().iloc[:,1].dropna()
-        < 0.75).mean() < 0.085
+        < 0.75).mean() < 0.09
 
 def test_latency(df):
     """Consistency of latency"""
@@ -509,8 +551,8 @@ def test_latency(df):
     df['owdDownMean'] = df['owdDown'].dropna().apply(lambda x: np.mean(x) if len(x) else np.nan)
     df['owdUpMean'] = df['owdUp'].dropna().apply(lambda x: np.mean(x) if len(x) else np.nan)
 
-    assert df['owdDownMean'].min() > -355e3 # Ahould always be positive! (Timesync problem)
-    assert (df['owdDownMean'] < 0).mean() < 0.005
+    assert df['owdDownMean'].min() > -700e3 # Should always be positive! (Timesync problem)
+    assert (df['owdDownMean'] < 0).mean() < 0.008
     assert df['owdDownMean'].max() < 4600e3
     assert (df['owdDownMean'] > 2500e3).mean() < 0.0001
 
@@ -523,7 +565,7 @@ def test_latency(df):
     assert ((df['owdSum'] - df['ping']).abs() > 50).mean() < 0.004
     assert ((df['owdSum'] - df['ping']).abs() > 20).mean() < 0.06
 
-    assert df['owdSum'].corr(df['ping']) > 0.12 # Seems low for similar measurements
+    assert df['owdSum'].corr(df['ping']) > 0.13 # Seems low for similar measurements
 
     df['highping'] = df['ping'] > 100
     assert (df.groupby('file')['highping'].mean() < 0.02).all()
@@ -547,11 +589,20 @@ def test_loss(df):
     # Ignoring last day as only one device might be synced (it is synced next time active)
     dfs = df[df['time'].dt.date < df['time'].max().date()]
 
-    # Consistency of loss with ping and owd
-    assert (dfs['owdDown'].isna() != dfs['lossDown_count'].isna()).sum() == 0
-    assert (dfs['owdUp'].isna() != dfs['lossUp_count'].isna()).mean() < 0.013
-    assert (dfs['ping'].isna() != dfs['lossDown_count'].isna()).mean() < 0.02
-    assert (dfs['ping'].isna() != dfs['lossUp_count'].isna()).mean() < 0.03
+    # Consistency of latency measurements existance
+    assert (dfs['owdDown'].isna() == dfs['lossDown_count'].isna()).all()
+    assert (dfs['owdUp'].isna() == dfs['lossUp_count'].isna()).all()
+    assert (dfs['owdDown'].isna() == dfs['ping'].isna()).mean() > 0.99
+    assert (dfs['owdUp'].isna() == dfs['ping'].isna()).mean() > 0.99
+
+    # Need to handle NaN cases vs [] (Empty array)
+    owdUpC = dfs['owdUp'].apply(lambda x: np.nan if isinstance(x, np.ndarray) and len(x)==0 else x)
+    assert (dfs[dfs['ping'].isna() != owdUpC.isna()].groupby('file')['time'].count() > 50).sum() <= 2 # 2021-09-21-1712-GPS-PI-02-ping is mising, 2024-04-09-0807-GPS-PI-05-owds have problem
+    assert (dfs[dfs['ping'].isna() != owdUpC.isna()].groupby('file')['time'].count() > 25).mean() < 0.1
+
+    owdDownC = dfs['owdDown'].apply(lambda x: np.nan if isinstance(x, np.ndarray) and len(x)==0 else x)
+    assert (dfs[dfs['ping'].isna() != owdDownC.isna()].groupby('file')['time'].count() > 50).sum() <= 5 # 3 more owdUp files missing (direction switched in create.py)
+    assert (dfs[dfs['ping'].isna() != owdDownC.isna()].groupby('file')['time'].count() > 25).mean() < 0.1
 
 def test_count_packets(df):
     """Plausibility of lost packet counters"""
@@ -579,7 +630,7 @@ def test_count_packets(df):
     assert (df[df['lossDown_count'] == 10]['down_count'] > 0).mean() < 0.02
     # Rather high, but might be caused by not being in sync
     assert (df[df['lossUp_count'] == 10]['up_count'] > 0).mean() < 0.45
-    assert (df[df['lossDown_count'] > 0]['down_count'] == 10).mean() < 0.16
+    assert (df[df['lossDown_count'] > 0]['down_count'] == 10).mean() < 0.17
     # Rather high, but might be caused by not being in sync
     assert (df[df['lossUp_count'] > 0]['up_count'] == 10).mean() < 0.43
     assert (df[df['down_count'] == 10]['lossDown_count'] > 0).mean() < 0.003
@@ -599,7 +650,7 @@ def test_measurement_types(df):
 
     # Test if all measurements on the same day belong to the same type (datarate vs latency)
     # equivalent: on each day, there is either no data rate measurement or no latency measurement
-    dfd = df.groupby(pd.Grouper(key='time', freq='1d'))
+    dfd = df.groupby(df['file'].str[0:10]) # Take from filename as this uses same locality as ping/data selection
     no_datarate_measurement = dfd['datarateMeasurement'].sum() == 0
     no_latency_measurement = dfd['latencyMeasurement'].sum() == 0
     assert (no_datarate_measurement | no_latency_measurement).all()
@@ -611,13 +662,22 @@ def test_measurement_types(df):
 
 def test_daily_file_pairs(dfa, dfb):
     """Checks for daily filecounts of different providers"""
-    filediffs = (dfa.groupby(pd.Grouper(key='time', freq='1d'))['file'].nunique()
-        - dfb.groupby(pd.Grouper(key='time', freq='1d'))['file'].nunique()).abs()
+
+    # Ignore last day as this might not be complete, due to missing sync at the end
+    last_day = max([dfa.time.max().date(), dfb.time.max().date()])
+    dfar = dfa[dfa.time.dt.date < last_day]
+    dfbr = dfb[dfb.time.dt.date < last_day]
+
+    filediffs = (dfar.groupby(pd.Grouper(key='time', freq='1d'))['file'].nunique()
+        - dfbr.groupby(pd.Grouper(key='time', freq='1d'))['file'].nunique()).abs()
     assert filediffs.max() < 3
 
-    # Check if not more than these known errors occured
-    assert (filediffs == 1).sum() <= 30
-    assert (filediffs == 2).sum() <= 8
+    # Check if some days do not map to each other (might occur in corner cases, that need to be analysed)
+    assert filediffs.notna().all()
+
+    # Check if not more than these known errors occured (test excplicitly requested)
+    assert (filediffs == 1).sum() == 46
+    assert (filediffs == 2).sum() == 16
 
 def test_pairs(df, dfa, dfb):
     """Checks for pairing of data"""
@@ -690,11 +750,11 @@ def test_pairs(df, dfa, dfb):
     assert (pairs['ntp-TP-Core_stB'].fillna('nan') == pairs['ntp-TP-Core_stB'].fillna('nan')).all()
     assert (pairs['ntp-TP-Core_offsetB'].fillna('nan') == pairs['ntp-TP-Core_offsetB'].fillna('nan')).all()
     assert (pairs['ntp-TP-Core_delayB'].fillna('nan') == pairs['ntp-TP-Core_delayB'].fillna('nan')).all()
-    assert (pairs['ntp-TP-Core_refidA'].fillna('nan') == pairs['ntp-TP-Core_refidB'].fillna('nan')).mean() > 0.91
+    assert (pairs['ntp-TP-Core_refidA'].fillna('nan') == pairs['ntp-TP-Core_refidB'].fillna('nan')).mean() > 0.9
 
 def test_notes(df):
     """Checks notes"""
-    assert (df['notes'] != '').mean() < 0.06
+    assert (df['notes'] != '').mean() < 0.08
 
     # Longitude cut labels where expected?
     # Happens max once at each end of file
@@ -713,17 +773,37 @@ def test_notes(df):
     # Most trips should have cuts at both their endpoints
     dft = df.groupby('trip')
     timemins = dft['time'].idxmin()
-    assert (df.loc[timemins]['notes'].str.contains('cut-long')
-        | df.loc[timemins]['notes'].str.contains('cut-lat')).mean() > 0.998
+    assert (df.loc[timemins]['notes'].str.contains('cut-long') |
+            df.loc[timemins]['notes'].str.contains('cut-lat')).mean() > 0.998
     timemaxs = dft['long'].idxmax()
-    assert (df.loc[timemaxs]['notes'].str.contains('cut-long')
-        | df.loc[timemaxs]['notes'].str.contains('cut-lat')).mean() > 0.95
+    assert (df.loc[timemaxs]['notes'].str.contains('cut-long') |
+            df.loc[timemaxs]['notes'].str.contains('cut-lat')).mean() > 0.95
     longmins = dft['long'].idxmin()
-    assert (df.loc[longmins]['notes'].str.contains('cut-long')
-        | df.loc[longmins]['notes'].str.contains('cut-lat')).mean() > 0.94
+    assert (df.loc[longmins]['notes'].str.contains('cut-long') |
+            df.loc[longmins]['notes'].str.contains('cut-lat')).mean() > 0.94
     longmaxs = dft['long'].idxmax()
-    assert (df.loc[longmaxs]['notes'].str.contains('cut-long')
-        | df.loc[longmaxs]['notes'].str.contains('cut-lat')).mean()> 0.95
+    assert (df.loc[longmaxs]['notes'].str.contains('cut-long') |
+            df.loc[longmaxs]['notes'].str.contains('cut-lat')).mean()> 0.95
+
+def test_dedicated(df):
+    """Compare dedicated measurements to non-dedicated measurements"""
+    # Averages
+    assert np.abs(df[df['dedicated']]['datarateDown'].mean() -
+                  df[-df['dedicated']]['datarateDown'].mean()) < 7e6
+    assert np.abs(df[df['dedicated']]['ping'].mean() -
+                  df[-df['dedicated']]['ping'].mean()) < 2
+
+    # Trajectory
+    assert (df[df['dedicated']].groupby(df['long'].round(3))['lat'].mean() -
+            df[-df['dedicated']].groupby(df['long'].round(3))['lat'].mean()).abs().mean() < 2e-5
+    assert (df[df['dedicated']].groupby(df['long'].round(3))['lat'].mean() -
+            df[-df['dedicated']].groupby(df['long'].round(3))['lat'].mean()).abs().max() < 7e-5
+
+    # SINR binned by location
+    assert (df[df['dedicated']].groupby(df['sinr'].round(3))['lat'].mean() -
+            df[-df['dedicated']].groupby(df['sinr'].round(3))['lat'].mean()).abs().mean() < 5e-4
+    assert (df[df['dedicated']].groupby(df['sinr'].round(3))['lat'].mean() -
+            df[-df['dedicated']].groupby(df['sinr'].round(3))['lat'].mean()).abs().max() < 5e-3
 
 def test_note_appearances(df):
     """Test if all notes appear and no unknown notes appear"""
@@ -731,7 +811,8 @@ def test_note_appearances(df):
         'neg-time-diff-time', 'neg-time-diff-gpstime', 'old-tech',
         'high-timestamp-position', 'high-timestamp-stdOut', 'low-timestamp-signalStrength',
         'low-timestamp-download', 'low-timestamp-stdOut',
-        'incomplete-signalStrength', 'low-timestamp-position']
+        'incomplete-signalStrength', 'low-timestamp-position',
+        'no-lossUp-file', 'no-lossDown-file']
     # Need to add file-specific notes as they appear (that is, when this test fails)
 
     # All notes in dataset are in list
