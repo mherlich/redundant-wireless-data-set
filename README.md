@@ -1,7 +1,7 @@
 # Main
 
 This repository contains the data set and code published together with our paper:
-TODO: Add reference to paper
+* WoWMoM 2024: https://www.salzburgresearch.at/publikation/an-open-data-set-about-multi-provider-redundancy-in-cellular-networks/
 
 It contains:
 * The data set in data/ in feather and csv format
